@@ -41,7 +41,7 @@ func main() {
 		if gobin := os.Getenv("GOBIN"); len(gobin) > 0 {
 			target = &gobin
 		} else {
-			bin := fmt.Sprintf("%s/bin", os.Getenv("GOPATH"))
+			bin := filepath.Join(os.Getenv("GOPATH"), "bin")
 			target = &bin
 		}
 	}
@@ -56,14 +56,34 @@ func main() {
 		fail(err)
 	}
 
-	oldpath := os.Getenv("PATH")
-	path := fmt.Sprintf("%s%s%s", gobin, string(os.PathListSeparator), os.Getenv("PATH"))
-	os.Setenv("PATH", fmt.Sprintf("%s%s%s", gobin, string(os.PathListSeparator), os.Getenv("PATH")))
-	defer os.Setenv("PATH", oldpath)
+	oldpath, set := os.LookupEnv("PATH")
+	path := fmt.Sprintf("%s%s%s", gobin, string(os.PathListSeparator), oldpath)
+	os.Setenv("PATH", path)
+	if set {
+		defer os.Setenv("PATH", oldpath)
+	} else {
+		defer os.Unsetenv("PATH")
+	}
 
-	env := []string{fmt.Sprintf("PATH=%s", path), fmt.Sprintf("GOPATH=%s", gopath), fmt.Sprintf("GOBIN=%s", gobin)}
+	oldgopath, set := os.LookupEnv("GOPATH")
+	os.Setenv("GOPATH", gopath)
+	if set {
+		defer os.Setenv("GOPATH", oldgopath)
+	} else {
+		defer os.Unsetenv("GOPATH")
+	}
+
+
+	oldgobin, set := os.LookupEnv("GOBIN")
+	os.Setenv("GOBIN", gobin)
+	if set {
+		defer os.Setenv("GOBIN", oldgobin)
+	} else {
+		defer os.Unsetenv("GOBIN")
+	}
+
 	args := append([]string{"install"}, packages...)
-	if out, err := doexec("go", gopath, args, env); err != nil {
+	if out, err := doexec("go", gopath, args); err != nil {
 		print(string(out))
 		fail(err)
 	}
@@ -71,7 +91,7 @@ func main() {
 	if len(*commands) > 0 {
 		for _, cmd := range strings.Split(*commands, ",") {
 			split := strings.Split(cmd, " ")
-			if out, err := doexec(split[0], gopath, split[1:], env); err != nil {
+			if out, err := doexec(split[0], gopath, split[1:]); err != nil {
 				print(string(out))
 				fail(err)
 			}
@@ -117,10 +137,9 @@ func link(gopath, source string) error {
 	return nil
 }
 
-func doexec(bin, dir string, args []string, env []string) ([]byte, error) {
+func doexec(bin, dir string, args []string) ([]byte, error) {
 	print(fmt.Sprintf("%s %s", bin, strings.Join(args, " ")))
 	cmd := exec.Command(bin, args...)
-	cmd.Env = env
 	cmd.Dir = dir
 
 	return cmd.CombinedOutput()
